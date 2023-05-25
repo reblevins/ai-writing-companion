@@ -6,38 +6,59 @@
         v-model="drawer"
         temporary
       >
-        <v-app-bar title="Application bar">
+        <v-app-bar title="Stories">
           <v-app-bar-nav-icon icon="mdi-bookshelf" size="x-large" variant="text" @click.stop="drawer = !drawer"></v-app-bar-nav-icon>
         </v-app-bar>
-        <v-list>
-          <v-list-item title="Navigation drawer"></v-list-item>
+        <v-list class="d-flex flex-column fill-height">
+          <v-list-item title="Stories"></v-list-item>
+          <v-list-item v-for="(story, index) in stories" :key="story.id" :active="index === currentStoryIndex" :title="story.title" @click="fetchStory(story, index)"></v-list-item>
+          <v-list-item class="mt-auto text-center" @click="createStory">New Story <v-icon icon="mdi-plus"></v-icon></v-list-item>
         </v-list>
       </v-navigation-drawer>
-      <v-main class="h-screen" style="padding-top: 0;">
-        <v-container class="d-flex flex-column">
-          <v-row>
-            <v-col cols="12" style="height: 70px;">
-              <v-text-field bg-color="white" density="compact" variant="plain" v-model="title"></v-text-field>
-            </v-col>
-            <v-col cols="12" ref="contentTextArea" style="height: calc(100vh - 140px) !important;">
-              <v-textarea
-                v-model="content"
-                class="h-100"
-                style="height: 100%;"
-                bg-color="white"
-                variant="plain"
-                :loading="loading"
-                :rows="contentTextAreaRows"
-              ></v-textarea>
-            </v-col>
-            <v-col cols="12" style="height: 70px;">
-              <v-btn @click="generate">Generate</v-btn>
-            </v-col>
-          </v-row>
-        </v-container>
-      </v-main>
+      <div ref="contentTextArea" class="d-flex flex-column h-screen flex-grow-1 pb-7">
+        <v-text-field class="flex-grow-0 flex-shrink-0" bg-color="white" density="compact" variant="plain" v-model="currentStory.title"></v-text-field>
+        <v-select
+          v-model="currentScene"
+          class="flex-grow-0 flex-shrink-0"
+          label="Scene"
+          :items="currentStory.scenes"
+          item-text="title"
+          item-value="index"
+          variant="underlined"
+          return-object
+        >
+          <template #append-item>
+            <v-btn @click="createScene">New Scene <v-icon icon="mdi-plus"></v-icon></v-btn>
+          </template>
+        </v-select>
+        <!-- <v-card ref="contentTextArea" class="flex-grow-1 flex-shrink-0 mb-3" variant="outlined">
+          <v-card-text> -->
+            <v-textarea
+              class="flex-grow-1 flex-shrink-0 mb-3"
+              v-model="currentScene.content"
+              :rows="contentTextAreaRows"
+              variant="outlined"
+            ></v-textarea>
+          <!-- </v-card-text>
+        </v-card> -->
+        <v-card class="suggestion flex-grow-0 flex-shrink-0" variant="outlined" :loading="loading">
+          <v-card-title>Suggestion</v-card-title>
+          <v-card-text v-if="suggestion != ''">{{ suggestion }}</v-card-text>
+          <v-card-text v-else class="font-italic text-caption">Click "Generate" to generate a new suggestion.</v-card-text>
+          <v-card-actions v-if="suggestion != ''">
+            <v-btn @click="insertSuggestion">Insert</v-btn>
+            <v-btn @click="generate">Try Again</v-btn>
+            <v-btn @click="suggestion = ''">Cancel</v-btn>
+          </v-card-actions>
+          <v-card-actions v-else>
+            <v-btn @click="generate">Generate</v-btn>
+            <v-btn @click="updateStory">Save</v-btn>
+          </v-card-actions>
+        </v-card>
+      </div>
       <v-app-bar-nav-icon variant="text" icon="mdi-cog" @click.stop="settings = !settings"></v-app-bar-nav-icon>
       <v-navigation-drawer
+        class="pa-3"
         v-model="settings"
         permanent
         location="right"
@@ -46,82 +67,206 @@
         <v-app-bar-nav-icon variant="text" @click.stop="settings = !settings">
           <v-icon icon="mdi-cog" size="large"></v-icon>
         </v-app-bar-nav-icon>
-        <v-list>
-          <v-list-item title="Settings">
-            <v-text-field label="Genre" v-model="genre"></v-text-field>
-            <v-textarea label="Summary" v-model="summary" rows="10"></v-textarea>
-            <!-- <v-text-field label="Characters" v-model="characters"></v-text-field>
-          <v-text-field label="Setting" v-model="setting"></v-text-field> -->
-          </v-list-item>
-        </v-list>
+        <v-tabs
+          v-model="settingsTab"
+          align-tabs="left"
+        >
+          <v-tab value="summary_settings">Summary</v-tab>
+          <v-tab value="story_settings">Story</v-tab>
+        </v-tabs>
+        <v-window v-model="settingsTab">
+          <v-window-item value="summary_settings">
+            <v-text-field label="Title" v-model="currentScene.title"></v-text-field>
+            <v-textarea label="Summary" v-model="currentScene.summary" rows="10" auto-grow></v-textarea>
+          </v-window-item>
+          <v-window-item value="story_settings">
+            <v-text-field label="Title" v-model="currentStory.title"></v-text-field>
+            <v-textarea label="Summary" v-model="currentStory.summary" rows="10"></v-textarea>
+
+            <v-btn color="red" @click="deleteStory">Delete Story</v-btn>
+          </v-window-item>
+        </v-window>
       </v-navigation-drawer>
     </v-layout>
   </v-card>
+  <v-snackbar
+    v-model="statusDialogOpen"
+    multi-line
+  >
+    {{ statusText }}
+
+    <template v-slot:actions>
+      <v-btn
+        color="red"
+        variant="text"
+        @click="statusDialogOpen = false"
+      >
+        Close
+      </v-btn>
+    </template>
+  </v-snackbar>
 </template>
 
 <script setup>
 import { onMounted, ref, computed, watch } from 'vue'
 import axios from 'axios'
 
-import InputBox from '@/components/InputBox.vue';
-
 const drawer = ref(false)
 const settings = ref(false)
 const loading = ref(false)
+const stories = ref([])
+const currentStory = ref({
+  id: null,
+  title: '',
+  genre: '',
+  summary: '',
+  content: '',
+  characters: '',
+  setting: '',
+  scenes: []
+})
+const currentStoryIndex = ref(0)
+const currentSceneIndex = ref(0)
 const prompts = ref([])
-const content = ref('SCENE: On the bridge of The Wayward Star.')
-const contentTextArea = ref()
-const title = ref('The Wayward Star')
-const genre = ref('Science Fiction')
-const summary = ref(`"The Wayward Star" is an interstellar spaceship, one of the most advanced in the galaxy, with a unique characteristic: it is sentient. It has a mind of its own and is known to be slightly eccentric. The ship is equipped with the latest technology, and it can travel faster than light.
-
-The ship is under the command of Captain Jane, a fearless leader who is respected by the crew. The rest of the crew is made up of a rag-tag group of humans and aliens, each with their own set of skills and quirks. There's Ben, the ship's engineer, who's always tinkering with something; Sarah, the ship's medic, who's both tough and caring; and Zax, a humanoid alien with a mischievous streak.
-
-"The Wayward Star" is on a mission to explore the galaxy and make contact with other intelligent life forms. As they journey through the stars, they encounter a variety of strange and fascinating creatures. Some are friendly, while others are hostile, but the crew always manages to find a way to navigate through the challenges.
-
-However, as they continue their journey, the ship's eccentricity becomes more pronounced. It starts to develop its own personality and even a sense of humor. It starts to play practical jokes on the crew, and sometimes it makes decisions that are not in their best interest.
-
-Despite this, the crew remains loyal to the ship, and they come to love it like a member of their family. They realize that "The Wayward Star" is more than just a spaceship; it's a living being, with its own hopes and fears, and they are honored to be a part of its journey.
-
-As they continue their mission, the crew faces many challenges, both external and internal. They must battle dangerous alien creatures, navigate treacherous asteroid fields, and deal with their own personal demons. But through it all, they stick together and rely on each other, and the ship's eccentricity adds a unique flavor to their adventures.
-
-In the end, "The Wayward Star" and its crew complete their mission, having explored more of the galaxy than anyone ever thought possible. And though they may have faced many dangers along the way, they all agree that it was worth it, for the experiences they shared and the friendships they forged will last a lifetime.`)
-const characters = ref('')
-const setting = ref('')
+const suggestion = ref('')
+const content = ref('')
+const contentTextArea = ref(null)
+const contentTextAreaRows = ref(1)
+const statusDialogOpen = ref(false)
+const statusText = ref('')
+const settingsTab = ref('summary_settings')
+const apiUrl = 'http://127.0.0.1'
+const apiPort = 5001
 
 onMounted(async () => {
+  fetchStories()
+
   setTimeout(() => {
-    contentTextAreaRows.value = Math.floor(contentTextArea.value.$el.clientHeight / 26)
-  }, 100)
+    console.log(contentTextArea.value.clientHeight)
+    contentTextAreaRows.value = Math.floor((contentTextArea.value.clientHeight - 183) / 31)
+  }, 500)
+})
+
+const updateContent = (event) => {
+  currentScene.value.content = event.target.textContent;
+}
+
+const currentScene = ref({
+  title: '',
+  summary: '',
+  content: ''
 })
 
 const generate = async () => {
   loading.value = true
   const body = {
-    prompts: content.value,
-    title: title.value,
-    genre: genre.value,
-    summary: summary.value,
+    prompts: currentStory.value.content?.trim() || '',
+    title: currentStory.value.title,
+    genre: currentStory.value.genre,
+    summary: currentStory.value.summary,
+    scene: currentScene.value.summary + '\n\n' + currentScene.value.content,
     // characters: characters.value,
     // setting: setting.value,
-    // scene: scene.value
   }
-  const { data } = await axios.post('http://localhost:5000', body)
-  content.value = data.map((prompt) => {
-    if (prompt.role !== 'system') {
-      return prompt.content
-    }
-  }).join('')
+  console.log(body)
+  const response = await axios.post(`${apiUrl}:${apiPort}/generate`, body)
+  prompts.value = response.data.prompts
+  suggestion.value = response.data.suggestion
+
+  if (response.data.error) {
+    loading.value = false
+    statusText.value = response.data.error
+    statusDialogOpen.value = true
+    console.log(response.data.error)
+    return
+  }
+
+  content.value = prompts.value[prompts.value.length - 1].content
+  
   // if the last character is a period with no space, add a space
-  if (content.value.slice(-1) === '.') {
-    content.value += ' '
-  }
+  // if (content.value.slice(-1) === '.') {
+  //   content.value += ' '
+  // }
   loading.value = false
 }
 
-const contentTextAreaRows = ref()
+// Retrieve a list of stories from the api
+const fetchStories = async () => {
+  const response = await axios.get(`${apiUrl}:${apiPort}/stories`)
+  stories.value = response.data
+  console.log(stories.value)
+  if (stories.value.length > 0) {
+    fetchStory(stories.value[0])
+  }
+}
 
-watch(content, (val) => {
-  // Log height of contentTextArea
-})
+// Fetch a story
+const fetchStory = async (story, index) => {
+  const response = await axios.get(`${apiUrl}:${apiPort}/stories/${story.id}`)
+  currentStory.value = response.data
+  currentStoryIndex.value = index
+  if (currentStory.value.content === null) {
+    currentStory.value.content = ''
+  }
+  if (currentScene.value.id === undefined) {
+    currentSceneIndex.value = currentStory.value.scenes.length - 1
+    currentScene.value = currentStory.value.scenes[currentSceneIndex.value]
+  }
+  if (currentScene.value.content === null) {
+    currentScene.value.content = ''
+  }
+  drawer.value = false
+}
+
+// Create a new story
+const createStory = async () => {
+  const response = await axios.post(`${apiUrl}:${apiPort}/stories`, { title: 'Untitled' })
+  stories.value.push(response.data)
+}
+
+// Update a story
+const updateStory = async () => {
+  console.log(currentStory.value.id)
+  const response = await axios.put(`${apiUrl}:${apiPort}/stories/${currentStory.value.id}`, currentStory.value)
+  fetchStories()
+}
+
+// Delete a story
+const deleteStory = async () => {
+  const response = await axios.delete(`${apiUrl}:${apiPort}/stories/${currentStory.value.id}`)
+  fetchStories()
+}
+
+const insertSuggestion = (index) => {
+  // If the last character isn't a space, add one
+  if (currentScene.value.content.slice(-1) !== ' ') {
+    console.log('inserting suggestion', content.value.slice(-1))
+    currentScene.value.content += ' '
+  }
+  currentScene.value.content += suggestion.value
+  suggestion.value = ''
+}
+
+const showErrorAlert = (message) => {
+  
+}
+
+const createScene = () => {
+  currentStory.value.scenes.push({
+    title: '',
+    summary: '',
+    content: ''
+  })
+  currentSceneIndex.value = currentStory.value.scenes.length - 1
+}
 </script>
+
+<style lang="scss" scoped>
+#editor, .suggestion {
+  border: 1px solid #ccc;
+  outline: none;
+}
+#editor div {
+  margin-bottom: 12px;
+}
+</style>
