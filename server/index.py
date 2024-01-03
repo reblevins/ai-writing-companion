@@ -1,11 +1,18 @@
+import os
 from flask import Flask, request, jsonify, g
 from flask_cors import CORS
 import openai
 import sqlite3
+from langchain.chat_models import ChatOpenAI
+from langchain.prompts import PromptTemplate
+from langchain.output_parsers import PydanticOutputParser
+from pydantic import BaseModel, Field
+from typing import List
 
 
-# openai.api_key_path = ("/Users/rodney/dev/learning/ai-writing-companion/.api_key")
-openai.api_key = "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"
+OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
+openai.api_key = OPENAI_API_KEY
+llm = ChatOpenAI(temperature=0.9, model_name='gpt-4', openai_api_key=OPENAI_API_KEY)
 
 # instantiate the app
 app = Flask(__name__)
@@ -203,6 +210,106 @@ def generate_response():
     return jsonify({
         'suggestion': completion.choices[0].message.content,
         'prompts': prompts
+    })
+
+
+@app.route('/editor-suggestions', methods=['POST'])
+def get_editor_suggestions():
+    genre = request.json['genre']
+    age_group = request.json['age_group']
+    text = request.json['text']
+    template = """
+        You are going to take on the role of a world-class editor. You have helped publish thousands of novels that landed on the New York Times bestsellers list. You will be provided with some text and you will look at it critically, giving very detailed analysis of the text and helping the user to improve their writing in the following areas:
+            ⁃	Passive voice misuse
+            ⁃	Wordy sentences
+            ⁃	Punctuation in compound/complex sentences
+            ⁃	Word choice
+            ⁃	Intricate text
+            ⁃	Grammar
+            ⁃	Sentence length
+            ⁃	Clarity
+            ⁃	Engagement
+            ⁃	Writer is using effective, age-appropriate vocabulary words (if the age group of the reader is not given assume it is for adults) and the overall writing style is appropriate for the age of the reader
+            ⁃	Avoids using a verb other than "said" to carry dialogue
+            ⁃	Avoids using an adverb to modify the verb "said"
+
+        You are not helping them write the novel, you are providing your analysis of the novel and ways they can improve the text. Please give very specific examples of how they can do this. If there are no suggestions for a particular topic listed above please skip it and don't say anything.
+
+        {format_instructions}
+
+        Genre: {genre}
+        Age range: {age_group}
+        Text:
+        {text}
+    """
+
+    class Suggestion(BaseModel):
+        original_phrase: str = Field(description="The original phrase")
+        suggestion: str = Field(description="The suggested phrase")
+        explanation: str = Field(description="The explanation for the suggestion")
+
+    class Suggestions(BaseModel):
+        suggestions: List[Suggestion]
+
+    parser = PydanticOutputParser(pydantic_object=Suggestions)
+    prompt = PromptTemplate(
+        input_variables=["genre", "age_group", "text"],
+        template=template,
+        partial_variables={"format_instructions": parser.get_format_instructions()}
+    )
+
+    final_prompt = prompt.format(genre=genre, age_group=age_group, text=text)
+    # output = llm(final_prompt)
+    # print(output)
+
+    return jsonify({
+        "suggestions": [
+            {
+                "original_phrase": "the raindrops hammering against the panes",
+                "suggestion": "the raindrops pummeled the panes",
+                "explanation": "Using 'pummeled' instead of 'hammering' adds a more intense and dramatic effect to the storm."
+            },
+            {
+                "original_phrase": "howled like wild beasts",
+                "suggestion": "howled as if they were wild beasts",
+                "explanation": "This revision maintains the comparison while avoiding the passive voice."
+            },
+            {
+                "original_phrase": "a language that had not been spoken by human tongues for centuries",
+                "suggestion": "a language that humans had not spoken for centuries",
+                "explanation": "The revised sentence is more concise and avoids passive voice."
+            },
+            {
+                "original_phrase": "her hands moving with practiced precision",
+                "suggestion": "her hands moved with practiced precision",
+                "explanation": "Changing 'moving' to 'moved' makes the sentence active and more engaging."
+            },
+            {
+                "original_phrase": "As the final words of the incantation echoed against the glass ceiling",
+                "suggestion": "The final words of the incantation echoed against the glass ceiling",
+                "explanation": "Removing 'As' from the sentence improves clarity and readability."
+            },
+            {
+                "original_phrase": "quickly became clear",
+                "suggestion": "became clear",
+                "explanation": "Removing 'quickly' simplifies the text and avoids redundancy."
+            },
+            {
+                "original_phrase": "triumph and apprehension",
+                "suggestion": "triumph and anxiety",
+                "explanation": "The word 'anxiety' instead of 'apprehension' would be more age-appropriate for YA readers."
+            },
+            {
+                "original_phrase": "instead, it contained",
+                "suggestion": "rather, it contained",
+                "explanation": "The word 'rather' is more appropriate in this context and provides a smoother transition."
+            },
+            {
+                "original_phrase": "the only sound that remained",
+                "suggestion": "the only remaining sound",
+                "explanation": "This revision is more concise and direct."
+            }
+        ]
     })
 
 

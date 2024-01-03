@@ -1,6 +1,6 @@
 <template>
   <v-card>
-    <v-layout>
+    <v-layout class="w-100">
       <v-app-bar-nav-icon icon="mdi-bookshelf" size="x-large" variant="text" @click.stop="drawer = !drawer"></v-app-bar-nav-icon>
       <v-navigation-drawer
         v-model="drawer"
@@ -15,47 +15,78 @@
           <v-list-item class="mt-auto text-center" @click="createStory">New Story <v-icon icon="mdi-plus"></v-icon></v-list-item>
         </v-list>
       </v-navigation-drawer>
-      <div ref="contentTextArea" class="d-flex flex-column h-screen flex-grow-1 pb-7">
-        <v-text-field class="flex-grow-0 flex-shrink-0" bg-color="white" density="compact" variant="plain" v-model="currentStory.title"></v-text-field>
-        <v-select
-          v-model="currentScene"
-          class="flex-grow-0 flex-shrink-0"
-          label="Scene"
-          :items="currentStory.scenes"
-          item-text="title"
-          item-value="index"
-          variant="underlined"
-          return-object
-        >
-          <template #append-item>
-            <v-btn @click="createScene">New Scene <v-icon icon="mdi-plus"></v-icon></v-btn>
-          </template>
-        </v-select>
-        <!-- <v-card ref="contentTextArea" class="flex-grow-1 flex-shrink-0 mb-3" variant="outlined">
-          <v-card-text> -->
-            <v-textarea
-              class="flex-grow-1 flex-shrink-0 mb-3"
-              v-model="currentScene.content"
-              :rows="contentTextAreaRows"
-              variant="outlined"
-            ></v-textarea>
-          <!-- </v-card-text>
-        </v-card> -->
-        <v-card class="suggestion flex-grow-0 flex-shrink-0" variant="outlined" :loading="loading">
-          <v-card-title>Suggestion</v-card-title>
-          <v-card-text v-if="suggestion != ''">{{ suggestion }}</v-card-text>
-          <v-card-text v-else class="font-italic text-caption">Click "Generate" to generate a new suggestion.</v-card-text>
-          <v-card-actions v-if="suggestion != ''">
-            <v-btn @click="insertSuggestion">Insert</v-btn>
-            <v-btn @click="generate">Try Again</v-btn>
-            <v-btn @click="suggestion = ''">Cancel</v-btn>
-          </v-card-actions>
-          <v-card-actions v-else>
-            <v-btn @click="generate">Generate</v-btn>
-            <v-btn @click="updateStory">Save</v-btn>
-          </v-card-actions>
-        </v-card>
-      </div>
+      <v-main class="h-screen pt-0">
+        <v-sheet v-if="!editorMode" ref="contentTextArea" max-width="1200" class="mx-auto d-flex flex-column h-screen flex-grow-1 pb-7">
+          <v-text-field class="flex-grow-0 flex-shrink-0" bg-color="white" density="compact" variant="plain" v-model="currentStory.title"></v-text-field>
+          <v-select
+            v-model="currentScene"
+            class="flex-grow-0 flex-shrink-0"
+            label="Scene"
+            :items="currentStory.scenes"
+            item-text="title"
+            item-value="index"
+            variant="underlined"
+            return-object
+          >
+            <template #append-item>
+              <v-btn @click="createScene">New Scene <v-icon icon="mdi-plus"></v-icon></v-btn>
+            </template>
+          </v-select>
+          <!-- <v-card class="flex-grow-1 flex-shrink-0 mb-3" variant="outlined">
+            <v-card-text class="fill-height"> -->
+              <!-- <contenteditable class="fill-height" tag="div" :contenteditable="true" v-model="currentScene.content" :no-nl="false" :no-html="true" /> -->
+              <v-textarea
+                class="flex-grow-1 flex-shrink-0 mb-3"
+                v-model="currentScene.content"
+                hide-details
+                :rows="contentTextAreaRows"
+                variant="outlined"
+              ></v-textarea>
+            <!-- </v-card-text>
+          </v-card> -->
+          <v-card class="suggestion flex-grow-0 flex-shrink-0" variant="outlined" :loading="loading">
+            <v-card-title>Suggestion</v-card-title>
+            <v-card-text v-if="suggestion != ''">{{ suggestion }}</v-card-text>
+            <v-card-text v-else class="font-italic text-caption">Click "Generate" to generate a new suggestion.</v-card-text>
+            <v-card-actions v-if="suggestion != ''">
+              <v-btn @click="insertSuggestion">Insert</v-btn>
+              <v-btn @click="generate">Try Again</v-btn>
+              <v-btn @click="suggestion = ''">Cancel</v-btn>
+            </v-card-actions>
+            <v-card-actions v-else>
+              <v-btn @click="generate">Generate</v-btn>
+              <v-btn @click="editorMode = true">Editor Mode</v-btn>
+              <v-btn @click="updateStory">Save</v-btn>
+            </v-card-actions>
+          </v-card>
+        </v-sheet>
+        <v-sheet v-else max-width="1200" class="mx-auto d-flex flex-column h-screen flex-grow-1 pb-7">
+          <v-card v-for="suggestion in suggestions">
+            <v-card-text>
+              <p>{{ suggestion.original_phrase }}</p>
+              <p>{{ suggestion.suggestion }}</p>
+              <p>{{ suggestion.explanation }}</p>
+            </v-card-text>
+            <v-card-actions>
+              <v-btn>Click me</v-btn>
+            </v-card-actions>
+          </v-card>
+          <v-card v-if="suggestions.length == 0">
+            <v-card-text>
+              <p>No suggestions available.</p>
+            </v-card-text>
+          </v-card>
+          <v-card>
+            <v-card-text>
+              <p>Click "Generate" to generate a new editor suggestions.</p>
+            </v-card-text>
+            <v-card-actions>
+              <v-btn @click="generate">Generate</v-btn>
+              <v-btn @click="editorMode = false">Story Mode</v-btn>
+            </v-card-actions>
+          </v-card>
+        </v-sheet>
+      </v-main>
       <v-app-bar-nav-icon variant="text" icon="mdi-cog" @click.stop="settings = !settings"></v-app-bar-nav-icon>
       <v-navigation-drawer
         class="pa-3"
@@ -110,6 +141,8 @@
 <script setup>
 import { onMounted, ref, computed, watch } from 'vue'
 import axios from 'axios'
+import contenteditable from 'vue-contenteditable'
+import { load } from 'webfontloader'
 
 const drawer = ref(false)
 const settings = ref(false)
@@ -134,19 +167,25 @@ const contentTextArea = ref(null)
 const contentTextAreaRows = ref(1)
 const statusDialogOpen = ref(false)
 const statusText = ref('')
+const editorMode = ref(false)
+const suggestions = ref([])
 const settingsTab = ref('summary_settings')
 const apiUrl = 'http://127.0.0.1'
 const apiPort = 5001
+
+const isEditable = ref(false)
 
 onMounted(async () => {
   fetchStories()
 
   setTimeout(() => {
-    console.log(contentTextArea.value.clientHeight)
-    contentTextAreaRows.value = Math.floor((contentTextArea.value.clientHeight - 183) / 31)
+    contentTextAreaRows.value = Math.floor((contentTextArea.value.$el.clientHeight - 270) / 30)
   }, 500)
 })
 
+watch(isEditable, (newValue) => {
+  console.log(newValue)
+})
 const updateContent = (event) => {
   currentScene.value.content = event.target.textContent;
 }
@@ -166,9 +205,7 @@ const generate = async () => {
     summary: currentStory.value.summary,
     scene: currentScene.value.summary + '\n\n' + currentScene.value.content,
     // characters: characters.value,
-    // setting: setting.value,
   }
-  console.log(body)
   const response = await axios.post(`${apiUrl}:${apiPort}/generate`, body)
   prompts.value = response.data.prompts
   suggestion.value = response.data.suggestion
@@ -190,11 +227,34 @@ const generate = async () => {
   loading.value = false
 }
 
+watch(editorMode, (newValue) => {
+  if (newValue === true) {
+    callEditor()
+  }
+})
+
+const callEditor = async() => {
+  loading.value = true
+  const body = {
+    genre: currentStory.value.genre,
+    text: currentStory.value.content,
+    age_group: 'young adult',
+  }
+  const response = await axios.post(`${apiUrl}:${apiPort}/editor-suggestions`, body)
+  console.log(response.data)
+  suggestions.value = response.data.suggestions
+
+  loading.value = false
+}
+
+const enterPressed = (event) => {
+  console.log(event)
+}
+
 // Retrieve a list of stories from the api
 const fetchStories = async () => {
   const response = await axios.get(`${apiUrl}:${apiPort}/stories`)
   stories.value = response.data
-  console.log(stories.value)
   if (stories.value.length > 0) {
     fetchStory(stories.value[0])
   }
@@ -261,12 +321,24 @@ const createScene = () => {
 }
 </script>
 
-<style lang="scss" scoped>
+<style lang="scss">
 #editor, .suggestion {
   border: 1px solid #ccc;
   outline: none;
 }
 #editor div {
   margin-bottom: 12px;
+}
+[contenteditable] {
+  outline: 0px solid transparent;
+}
+.editor-suggestion {
+  display: inline-block;
+  border-bottom: 1px solid green;
+  cursor: pointer;
+
+  &:hover {
+    background-color: #e6ffe6;
+  }
 }
 </style>
