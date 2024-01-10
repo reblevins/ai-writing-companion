@@ -6,6 +6,7 @@ client/dist
 # local env files
 client/.env.local
 client/.env.*.local
+server/.api_key
 
 # Log files
 client/npm-debug.log*
